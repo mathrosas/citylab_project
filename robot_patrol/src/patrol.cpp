@@ -36,10 +36,10 @@ private:
       int start_idx = 180;
       int end_idx = 540;
 
-      float max_distance = 0.0;
-      int max_index = msg->ranges.size() / 2; // Default to forward
+      float max_distance = front_distance;
+      int max_index = 360; // Default to forward
 
-      for (int i = start_idx; i < end_idx; i++) {
+      for (int i = start_idx; i <= end_idx; i++) {
         if (std::isfinite(msg->ranges[i]) && msg->ranges[i] > max_distance) {
           max_distance = msg->ranges[i];
           max_index = i;
