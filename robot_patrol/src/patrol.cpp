@@ -2,101 +2,123 @@
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/laser_scan.hpp"
 #include <algorithm>
+#include <cmath>
 #include <vector>
 
 using namespace std::chrono_literals;
 using std::placeholders::_1;
 
-#define PI 3.14159
-
 class Patrol : public rclcpp::Node {
 public:
   Patrol() : Node("patrol_node"), direction_(0.0) {
-    // Initialize publisher
+    // Declare parameters
+    this->declare_parameter("obstacle_threshold", 0.35);
+    this->declare_parameter("linear_velocity", 0.1);
+    this->declare_parameter("angular_gain", 0.5);
+
     publisher_ =
         this->create_publisher<geometry_msgs::msg::Twist>("cmd_vel", 10);
-
-    // Initialize laser subscription
     subscription_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
         "scan", 10, std::bind(&Patrol::laser_callback, this, _1));
-
-    // Initialize control timer (10Hz)
     timer_ =
         this->create_wall_timer(100ms, std::bind(&Patrol::control_loop, this));
   }
 
 private:
-  float direction_; // Stores safest direction angle
+  float direction_;
+  float obstacle_threshold_;
+  float linear_velocity_;
+  float angular_gain_;
 
   int angle_to_index(const sensor_msgs::msg::LaserScan::SharedPtr &scan,
-                     float desired_angle_deg) {
-    float desired_angle_rad = desired_angle_deg * PI / 180.0;
+                     float desired_angle_deg) const {
+    float desired_angle_rad = desired_angle_deg * M_PI / 180.0;
     int index = static_cast<int>(std::round(
         (desired_angle_rad - scan->angle_min) / scan->angle_increment));
-    return ((index + scan->ranges.size()) % scan->ranges.size());
+    return (index + scan->ranges.size()) % scan->ranges.size();
   }
 
   void laser_callback(const sensor_msgs::msg::LaserScan::SharedPtr msg) {
-    int start_idx = angle_to_index(msg, -90.0);
-    int end_idx = angle_to_index(msg, 90.0);
+    obstacle_threshold_ = this->get_parameter("obstacle_threshold").as_double();
 
-    int front_idx_15 = angle_to_index(msg, -15.0);
+    // Get indices for -15°, 0°, and 15° to check frontal proximity
+    int front_idx_min15 = angle_to_index(msg, -15.0);
     int front_idx_0 = angle_to_index(msg, 0.0);
-    int front_idx_51 = angle_to_index(msg, 15.0);
+    int front_idx_15 = angle_to_index(msg, 15.0);
 
-    float front_distance_15 = msg->ranges[front_idx_15];
+    float front_distance_min15 = msg->ranges[front_idx_min15];
     float front_distance_0 = msg->ranges[front_idx_0];
-    float front_distance_51 = msg->ranges[front_idx_51];
+    float front_distance_15 = msg->ranges[front_idx_15];
 
-    int front_idx;
+    // Find the minimum distance among the three frontal points
     float front_distance;
-
-    if (front_distance_15 <= front_distance_0 &&
-        front_distance_15 <= front_distance_51) {
-      front_distance = front_distance_15;
-      front_idx = front_idx_15;
-    } else if (front_distance_0 <= front_distance_51) {
+    int front_idx;
+    if (front_distance_min15 <= front_distance_0 &&
+        front_distance_min15 <= front_distance_15) {
+      front_distance = front_distance_min15;
+      front_idx = front_idx_min15;
+    } else if (front_distance_0 <= front_distance_15) {
       front_distance = front_distance_0;
       front_idx = front_idx_0;
     } else {
-      front_distance = front_distance_51;
-      front_idx = front_idx_51;
+      front_distance = front_distance_15;
+      front_idx = front_idx_15;
     }
-    RCLCPP_INFO(this->get_logger(), "front_dist: '%f'", front_distance);
 
-    // Check front distance (35cm threshold)
-    if (front_distance <= 0.35) {
-      // Find safest direction in front 180 degrees
+    RCLCPP_DEBUG(this->get_logger(), "Front distance: %f", front_distance);
+
+    if (front_distance <= obstacle_threshold_) {
+      // Search for the safest direction in the front 180 degrees
+      int start_idx = angle_to_index(msg, -90.0);
+      int end_idx = angle_to_index(msg, 90.0);
       float max_distance = front_distance;
-      int max_index = front_idx; // Default to forward
+      int max_index = front_idx;
 
-      for (int i = start_idx; i <= end_idx; i++) {
-        if (std::isfinite(msg->ranges[i]) && msg->ranges[i] > max_distance) {
-          max_distance = msg->ranges[i];
-          max_index = i;
+      // Handle potential index wrap-around
+      if (start_idx <= end_idx) {
+        for (int i = start_idx; i <= end_idx; i++) {
+          update_max_distance(msg, i, max_distance, max_index);
+        }
+      } else {
+        for (int i = start_idx; i < static_cast<int>(msg->ranges.size()); i++) {
+          update_max_distance(msg, i, max_distance, max_index);
+        }
+        for (int i = 0; i <= end_idx; i++) {
+          update_max_distance(msg, i, max_distance, max_index);
         }
       }
 
-      // Calculate angle (-pi/2 to pi/2)
+      // Calculate direction angle and clamp to [-π/2, π/2]
       direction_ = msg->angle_min + max_index * msg->angle_increment;
-
-      // Normalize to [-pi/2, pi/2]
       if (direction_ > M_PI / 2)
         direction_ = M_PI / 2;
       else if (direction_ < -M_PI / 2)
         direction_ = -M_PI / 2;
-      RCLCPP_INFO(this->get_logger(), "direction_: '%f'", direction_);
     } else {
-      direction_ = 0.0;
+      direction_ = 0.0; // No obstacle, go straight
+    }
+  }
+
+  void update_max_distance(const sensor_msgs::msg::LaserScan::SharedPtr &msg,
+                           int index, float &max_distance,
+                           int &max_index) const {
+    if (std::isfinite(msg->ranges[index]) &&
+        msg->ranges[index] > max_distance) {
+      max_distance = msg->ranges[index];
+      max_index = index;
     }
   }
 
   void control_loop() {
-    auto msg = geometry_msgs::msg::Twist();
+    linear_velocity_ = this->get_parameter("linear_velocity").as_double();
+    angular_gain_ = this->get_parameter("angular_gain").as_double();
 
-    msg.linear.x = 0.1; // Move forward
+    auto msg = geometry_msgs::msg::Twist();
+    msg.linear.x = linear_velocity_;
+
     if (std::abs(direction_) > 0.0) {
-      msg.angular.z = direction_ / 2.0;
+      msg.linear.x *= 0.5; // Reduce speed while turning
+      msg.angular.z = direction_ * angular_gain_;
     } else {
       msg.angular.z = 0.0;
     }
@@ -104,7 +126,6 @@ private:
     publisher_->publish(msg);
   }
 
-  // Member variables
   rclcpp::TimerBase::SharedPtr timer_;
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr publisher_;
   rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr subscription_;
