@@ -36,12 +36,14 @@ Visualization Manager:
     - Class: rviz_default_plugins/LaserScan
       Name: LaserScan
       Enabled: true
+      Topic: scan
       Style: Spheres
       Size (m): 0.025
 
     - Class: rviz_default_plugins/Odometry
       Name: Odometry
       Enabled: true
+      Topic: odom
       Position Tolerance: 0.1
       Angle Tolerance: 0.314159
       Keep: 250
