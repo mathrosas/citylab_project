@@ -7,6 +7,8 @@
 using namespace std::chrono_literals;
 using std::placeholders::_1;
 
+#define PI 3.14159
+
 class Patrol : public rclcpp::Node {
 public:
   Patrol() : Node("patrol_node"), direction_(0.0) {
@@ -26,18 +28,47 @@ public:
 private:
   float direction_; // Stores safest direction angle
 
+  int angle_to_index(const sensor_msgs::msg::LaserScan::SharedPtr &scan,
+                     float desired_angle_deg) {
+    float desired_angle_rad = desired_angle_deg * PI / 180.0;
+    int index = static_cast<int>(std::round(
+        (desired_angle_rad - scan->angle_min) / scan->angle_increment));
+    return ((index + scan->ranges.size()) % scan->ranges.size());
+  }
+
   void laser_callback(const sensor_msgs::msg::LaserScan::SharedPtr msg) {
+    int start_idx = angle_to_index(msg, -90.0);
+    int end_idx = angle_to_index(msg, 90.0);
+
+    int front_idx_15 = angle_to_index(msg, -15.0);
+    int front_idx_0 = angle_to_index(msg, 0.0);
+    int front_idx_51 = angle_to_index(msg, 15.0);
+
+    float front_distance_15 = msg->ranges[front_idx_15];
+    float front_distance_0 = msg->ranges[front_idx_0];
+    float front_distance_51 = msg->ranges[front_idx_51];
+
+    int front_idx;
+    float front_distance;
+
+    if (front_distance_15 <= front_distance_0 &&
+        front_distance_15 <= front_distance_51) {
+      front_distance = front_distance_15;
+      front_idx = front_idx_15;
+    } else if (front_distance_0 <= front_distance_51) {
+      front_distance = front_distance_0;
+      front_idx = front_idx_0;
+    } else {
+      front_distance = front_distance_51;
+      front_idx = front_idx_51;
+    }
+    RCLCPP_INFO(this->get_logger(), "front_dist: '%f'", front_distance);
+
     // Check front distance (35cm threshold)
-    float front_distance = msg->ranges[360];
-    RCLCPP_INFO(this->get_logger(), "front_dist: '%f'", msg->ranges[360]);
-
-    if (front_distance < 0.35) {
+    if (front_distance <= 0.35) {
       // Find safest direction in front 180 degrees
-      int start_idx = 180;
-      int end_idx = 540;
-
       float max_distance = front_distance;
-      int max_index = 360; // Default to forward
+      int max_index = front_idx; // Default to forward
 
       for (int i = start_idx; i <= end_idx; i++) {
         if (std::isfinite(msg->ranges[i]) && msg->ranges[i] > max_distance) {
@@ -54,6 +85,7 @@ private:
         direction_ = M_PI / 2;
       else if (direction_ < -M_PI / 2)
         direction_ = -M_PI / 2;
+      RCLCPP_INFO(this->get_logger(), "direction_: '%f'", direction_);
     } else {
       direction_ = 0.0;
     }
@@ -62,11 +94,10 @@ private:
   void control_loop() {
     auto msg = geometry_msgs::msg::Twist();
 
+    msg.linear.x = 0.1; // Move forward
     if (std::abs(direction_) > 0.0) {
-      msg.linear.x = 0.0; // Stop forward motion
       msg.angular.z = direction_ / 2.0;
     } else {
-      msg.linear.x = 0.1; // Move forward
       msg.angular.z = 0.0;
     }
 
