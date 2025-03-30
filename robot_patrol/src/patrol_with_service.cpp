@@ -16,9 +16,9 @@ using std::placeholders::_1;
 class Patrol : public rclcpp::Node {
 public:
   Patrol() : Node("patrol_node") {
-    this->declare_parameter("linear_speed", 0.1);
-    this->declare_parameter("angular_speed", 0.5);
-    this->declare_parameter("stop_speed", 0.0);
+    this->declare_parameter("linear_velocity", 0.1);
+    this->declare_parameter("angular_velocity", 0.5);
+    this->declare_parameter("stop_velocity", 0.0);
 
     publisher_ = create_publisher<Twist>("cmd_vel", 10);
 
@@ -46,9 +46,10 @@ private:
 
   void
   handle_response(const rclcpp::Client<GetDirection>::SharedFuture future) {
-    double linear_speed = this->get_parameter("linear_speed").as_double();
-    double angular_speed = this->get_parameter("angular_speed").as_double();
-    double stop_speed = this->get_parameter("stop_speed").as_double();
+    double linear_velocity = this->get_parameter("linear_velocity").as_double();
+    double angular_velocity =
+        this->get_parameter("angular_velocity").as_double();
+    double stop_velocity = this->get_parameter("stop_velocity").as_double();
 
     auto msg = Twist();
     auto response = future.get();
@@ -57,17 +58,17 @@ private:
     RCLCPP_INFO(this->get_logger(), "Got direction: %s", direction.c_str());
 
     if (direction == "forward") {
-      msg.linear.x = linear_speed;
-      msg.angular.z = stop_speed;
+      msg.linear.x = linear_velocity;
+      msg.angular.z = stop_velocity;
     } else if (direction == "left") {
-      msg.linear.x = linear_speed;
-      msg.angular.z = angular_speed;
+      msg.linear.x = linear_velocity;
+      msg.angular.z = angular_velocity;
     } else if (direction == "right") {
-      msg.linear.x = linear_speed;
-      msg.angular.z = -angular_speed;
+      msg.linear.x = linear_velocity;
+      msg.angular.z = -angular_velocity;
     } else {
-      msg.linear.x = stop_speed;
-      msg.angular.z = stop_speed;
+      msg.linear.x = stop_velocity;
+      msg.angular.z = stop_velocity;
     }
 
     publisher_->publish(msg);
