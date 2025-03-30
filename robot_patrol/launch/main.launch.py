@@ -8,10 +8,17 @@ def generate_launch_description():
     pkg_share = get_package_share_directory('robot_patrol')
     rviz_config = os.path.join(pkg_share, 'config', 'robot_patrol_config.rviz')
 
-    patrol_node = Node(
+    direction_service_node = Node(
+            package='robot_patrol',
+            executable='direction_service_node',
+            name='direction_service_node',
+            output='screen'
+        )
+
+    patrol_with_service_node = Node(
         package='robot_patrol',
-        executable='patrol_node',
-        name='patrol_node',
+        executable='patrol_with_service_node',
+        name='patrol_with_service_node',
         output='screen',
     )
 
@@ -24,6 +31,7 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
-        patrol_node,
+        direction_service_node,
+        patrol_with_service_node,
         rviz_node
     ])
