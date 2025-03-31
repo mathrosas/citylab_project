@@ -1,13 +1,13 @@
-#include "custom_interfaces/srv/get_direction.hpp"
 #include "geometry_msgs/msg/twist.hpp"
 #include "rclcpp/rclcpp.hpp"
+#include "robot_patrol/srv/get_direction.hpp"
 #include "sensor_msgs/msg/laser_scan.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <vector>
 
-using GetDirection = custom_interfaces::srv::GetDirection;
+using GetDirection = robot_patrol::srv::GetDirection;
 using Twist = geometry_msgs::msg::Twist;
 using LaserScan = sensor_msgs::msg::LaserScan;
 using namespace std::chrono_literals;

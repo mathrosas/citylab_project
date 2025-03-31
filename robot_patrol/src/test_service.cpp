@@ -1,9 +1,9 @@
-#include "custom_interfaces/srv/get_direction.hpp"
+#include "robot_patrol/srv/get_direction.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/laser_scan.hpp"
 
 using std::placeholders::_1;
-using GetDirection = custom_interfaces::srv::GetDirection;
+using GetDirection = robot_patrol::srv::GetDirection;
 
 class ServiceTester : public rclcpp::Node {
 public:
